@@ -234,7 +234,7 @@ int board_early_init_f(void)
 	pfc_set_pin_function(3, 5, ALT2, 0, 0);	/* - P3_5 = ET_RXER */
 	pfc_set_pin_function(3, 6, ALT2, 0, 0);	/* - P3_6 = ET_RXDV */
 	pfc_set_pin_function(3, 0, ALT2, 0, 0);	/* + P3_0 = ET_TXCLK */
-	pfc_set_pin_function(10, 1, ALT4, 0, 0); /* + P10_1 = ET_TXER */
+	pfc_set_pin_function(10, 1, ALT4, 0, 1); /* + P10_1 = ET_TXER */
 	pfc_set_pin_function(10, 2, ALT4, 0, 0); /* + P10_2 = ET_TXEN */
 	pfc_set_pin_function(10, 3, ALT4, 0, 0); /* + P10_3 = ET_CRS */
 	pfc_set_pin_function(10, 4, ALT4, 0, 0); /* + P10_4 = ET_TXD0 */
@@ -246,28 +246,35 @@ int board_early_init_f(void)
 	pfc_set_pin_function(10, 10, ALT4, 0, 0); /* + P10_10 = ET_RXD2 */
 	pfc_set_pin_function(10, 11, ALT4, 0, 0); /* + P10_11 = ET_RXD3 */
 	//pfc_set_pin_function(4, 14, ALT8, 0, 0); /* P4_14 = IRQ6 (ET_IRQ) */ /* NOTE: u-boot doesn't enable interrupts */
+	pfc_set_gpio(4, 2, GPIO_OUT); 		/* P4_2 = PHY RST */
 
-	/* LED 0 */
 	pfc_set_gpio(7, 1, GPIO_OUT); /* P7_1 = GPIO_OUT */
 
-	/* SW1 */
-	pfc_set_gpio(1, 9, GPIO_IN); /* P1_9 = GPIO_IN */
-	/* SW2 */
-	pfc_set_gpio(1, 8, GPIO_IN); /* P1_8 = GPIO_IN */
-	/* SW3 */
-	pfc_set_gpio(1, 11, GPIO_IN); /* P1_11 = GPIO_IN */
+	/* USR LED */
+	pfc_set_gpio(6, 12, GPIO_OUT); /* P7_1 = GPIO_OUT */
+	/* RGD LED */
+	pfc_set_gpio(6, 13, GPIO_OUT); /* P7_1 = GPIO_OUT */
+	pfc_set_gpio(6, 14, GPIO_OUT); /* P7_1 = GPIO_OUT */
+	pfc_set_gpio(6, 15, GPIO_OUT); /* P7_1 = GPIO_OUT */
+
+
+	/* SW0 */
+	pfc_set_gpio(6, 0, GPIO_IN); /* P1_9 = GPIO_IN */
+
+	/* SD CARD */
+        pfc_set_pin_function(8, 3, ALT7, 0, 0); /* SCK */
+	pfc_set_pin_function(8, 4, ALT3, 0, 0); /* SSL */
+        pfc_set_pin_function(8, 5, ALT3, 0, 0); /* MOSI */
+        pfc_set_pin_function(8, 6, ALT3, 0, 0); /* MISO */
+	pfc_set_gpio(7, 8, GPIO_IN); /* C_DET */
 
 	return 0;
 }
 
 int board_late_init(void)
 {
-	u8 mac[6];
+	u8 mac[6] = { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55 };
 	u8 tmp[1];
-
-	/* Read Mac Address and set*/
-	i2c_init(CONFIG_SYS_I2C_SPEED, 0);
-	i2c_set_bus_num(CONFIG_SYS_I2C_MODULE);
 
 	/*
 	 * PORT EXPANDER
@@ -303,72 +310,67 @@ int board_late_init(void)
 	tmp[0] = 0x12;
 	i2c_write(0x21, 1, 1, tmp, 1); /* output */
 
-	/* Read MAC address */
-	i2c_read(CONFIG_SYS_I2C_EEPROM_ADDR,
-		 CONFIG_SH_ETHER_EEPROM_ADDR,
-		 CONFIG_SYS_I2C_EEPROM_ADDR_LEN,
-		 mac, 6);
+	gpio_set(4,2,0); // pull phy rst low
+	udelay(250 * 1000);
+	gpio_set(4,2,1); // pull phy rst high
+	udelay(250 * 1000);
 
-	if (is_valid_ether_addr(mac))
-		eth_setenv_enetaddr("ethaddr", mac);
+	eth_setenv_enetaddr("ethaddr", mac);
+
+	unsigned offset = 0;
+	unsigned kernelsz = 3 * (1024 * 1024);
+	unsigned rootfssz = 4 * (1024 * 1024);
 
 #if !defined(CONFIG_BOOT_MODE0)
-	printf(	"\t\t      SPI Flash Memory Map\n"
-		"\t\t------------------------------------\n"
-		"\t\t         Start      Size     SPI\n");
-	printf(	"\t\tu-boot:  0x%08X 0x%06X 0\n", 0,CONFIG_ENV_OFFSET);
-	printf(	"\t\t   env:  0x%08X 0x%06X 0\n", CONFIG_ENV_OFFSET, CONFIG_ENV_SIZE);
-	printf(	"\t\t    DT:  0x%08X 0x%06X 0\n", CONFIG_ENV_OFFSET+CONFIG_ENV_SIZE,CONFIG_ENV_SECT_SIZE);
-	printf(	"\t\tKernel:  0x%08X 0x%06X 0+1 (size*=2)\n",0x100000, 0x280000);
-	printf(	"\t\trootfs:  0x%08X 0x%06X 0+1 (size*=2)\n",0x400000, 0x2000000-0x400000);
+	printf(	"\t\t   SPI Flash Memory Map\n"
+		"\t\t---------------------------\n"
+		"\t\t         Start      Size\n");
+	printf(	"\t\tu-boot:  0x%08X 0x%06X\n",	offset, CONFIG_ENV_OFFSET);
+	offset += CONFIG_ENV_OFFSET;
+	printf(	"\t\t   env:  0x%08X 0x%06X\n",	offset, CONFIG_ENV_SIZE);
+	offset += CONFIG_ENV_SIZE;
+	printf(	"\t\t    DT:  0x%08X 0x%06X\n",	offset, CONFIG_ENV_SECT_SIZE);
+	offset += CONFIG_ENV_SECT_SIZE;
+	unsigned kerneloffset = offset;
+	printf(	"\t\tKernel:  0x%08X 0x%06X\n",	kerneloffset, kernelsz);
+	offset += kernelsz;
+	unsigned rootoffset = offset;
+	printf(	"\t\trootfs:  0x%08X 0x%06X\n",	rootoffset, rootfssz);
+	offset += rootfssz;
+	printf("\t\tTotal: 0x%08X\n", offset);
 #endif
+	setenv("serverip",	"192.168.2.1");
 
-	/* Boot uImage in external SDRAM */
-	/* Rootfs is a squashfs image in memory mapped QSPI */
-	/* => run s_boot */
-	setenv("s1", "sf probe 0; sf read 09800000 C0000 8000"); // Read out DT blob
-	setenv("s2", "sf probe 0:1; sf read 09000000 100000 500000"); //Copy Kernel to SDRAM
-	setenv("s3", "bootm start 0x09000000 - 0x09800000 ; bootm loados ;"\
-			"fdt memory 0x08000000 0x02000000"); // Change memory address in DTB
-	setenv("s4", "qspi dual"); // Change XIP interface to dual QSPI
-	setenv("sargs", "console=ttySC2,115200 console=tty0 ignore_loglevel root=/dev/mtdblock0"); // bootargs
-	setenv("s_boot", "run s1 s2 s3 s4; set bootargs ${sargs}; fdt chosen; bootm go"); // run the commands
+	setenv("ubootoffset",	"0x0");
+	setenv("ubootsz",	"0x80000");
+	setenv("ubootenvoffset","0x80000");
+	setenv("ubootenvsz",	"0x40000");
+	setenv("dtoffset",	"0xC0000");
+	setenv("dtsz",		"0x40000");
+	setenv("kerneloffset",	"0x100000");
+	setenv("kernelsz",	"0x300000");
+	setenv("rootfsoffset",	"0x400000");
+	setenv("rootfssz",	"0x400000");
 
-	/* Boot XIP using internal RAM */
-	/* Rootfs is a squashfs image in memory mapped QSPI */
-	/* => run x_boot */
-	/* Read out DT blob */
-	setenv("x1", "sf probe 0; sf read 20500000 C0000 8000");
-	/* Change memory address in DTB */
-	setenv("x2", "fdt addr 20500000 ; fdt memory 0x20000000 0x00A00000"); /* 10MB RAM */
-	/* Change XIP interface to dual QSPI */
-	setenv("x3", "qspi dual");
-	setenv("xargs", "console=ttySC2,115200 console=tty0 ignore_loglevel root=/dev/mtdblock0"); // bootargs
-	setenv("x_boot", "run x1 x2 x3; set bootargs ${xargs}; fdt chosen; bootx 18200000 20500000"); // run the commands
+	setenv("loadaddr",	"0x20000000");
+	setenv("fdtaddr",	"0x20800000"); 
 
-	/* Boot XIP using internal RAM */
-	/* Rootfs is a AXFS image in memory mapped QSPI */
-	/* => run xa_boot */
-	/* Read out DT blob */
-	setenv("xa1", "sf probe 0; sf read 20500000 C0000 8000");
-	/* Change memory address in DTB */
-	setenv("xa2", "fdt addr 20500000 ; fdt memory 0x20000000 0x00A00000"); /* 10MB RAM */
-	/* Change XIP interface to dual QSPI */
-	setenv("xa3", "qspi dual");
-	setenv("xaargs", "console=ttySC2,115200 console=tty0 ignore_loglevel root=/dev/null rootflags=physaddr=0x18800000"); // bootargs
-	setenv("xa_boot", "run xa1 xa2 xa3; set bootargs ${xaargs}; fdt chosen; bootx 18200000 20500000"); // run the commands
+	setenv("kernelmm",	"0x18100000");
 
-	/* Boot XIP using external SDRAM RAM */
-	/* Rootfs is a AXFS image in memory mapped QSPI */
-	/* => run xsa_boot */
-	/* Read out DT blob */
-	setenv("xsa1", "sf probe 0; sf read 09800000 C0000 8000");
-	/* Change memory address in DTB */
-	setenv("xsa2", "fdt addr 09800000 ; fdt memory 0x08000000 0x02000000"); /* 32MB SDRAM RAM */
-	/* Change XIP interface to dual QSPI */
-	setenv("xsa3", "qspi dual");
-	setenv("xsaargs", "console=ttySC2,115200 console=tty0 ignore_loglevel root=/dev/null rootflags=physaddr=0x18800000"); // bootargs
-	setenv("xsa_boot", "run xsa1 xsa2 xsa3; set bootargs ${xsaargs}; fdt chosen; bootx 18200000 09800000"); // run the commands
+	setenv("bootspi",	"sf probe; sf read ${fdtaddr} ${dtoffset} ${dtsz}; bootx ${kernelmm} ${fdtaddr}");
+	setenv("bootnet",	"dhcp ${loadaddr} uImage; tftp ${fdtaddr} r7s72100-grpeach.dtb; bootm ${loadaddr} - ${fdtaddr}");
+
+	setenv("writeuboot",	"mw.b ${loadaddr} 0xff ${ubootsz}; dhcp ${loadaddr} u-boot; sf probe;"\
+				" sf erase ${ubootoffset} ${ubootsz}; sf write ${loadaddr} ${ubootoffset} ${ubootsz}");
+
+	setenv("writedt",	"mw.b ${loadaddr} 0xff ${dtsz}; dhcp ${loadaddr} r7s72100-grpeach.dtb; sf probe;"\
+				" sf erase ${dtoffset} ${dtsz}; sf write ${loadaddr} ${dtoffset} ${dtsz}");
+
+	setenv("writekernel",   "mw.b ${loadaddr} 0xff ${kernelsz}; dhcp ${loadaddr} xipImage; sf probe;"\
+                                " sf erase ${kerneloffset} ${kernelsz}; sf write ${loadaddr} ${kerneloffset} ${kernelsz}");
+
+	setenv("writerootfs",	"mw.b ${loadaddr} 0xff ${rootfssz}; dhcp ${loadaddr} root.romfs; sf probe;"\
+				" sf erase ${rootfsoffset} ${rootfssz}; sf write ${loadaddr} ${rootfsoffset} ${rootfssz}");
 
 	return 0;
 }
@@ -492,7 +494,7 @@ const struct read_mode modes[READ_MODES] = {
 
 /* If you are using a SPI Flash device that does not have 4-byte address
    commands (Flash size <= 16MB), then change the #if 0 to #if 1 */
-#if 0
+#if 1
  #define ADDRESS_BYTE_SIZE 3	/* Addresses are 3-bytes (A0-A23) */
  #define FAST_READ 0x0B		/* Fast Read Mode (1-bit cmd, 1-bit addr, 1-bit data, 3-bytes of address) */
  #define QUAD_READ 0x6B		/* Quad Read Mode (1-bit cmd, 1-bit addr, 4-bit data, 3-bytes of address) */
@@ -514,9 +516,9 @@ u32 g_QUAD_IO_DDR_RD_DMY;	/* Quad I/O DDR Read Mode  */
 u32 g_QUAD_IO_RD_OPT;		/* Addtional option or 'mode' settings */
 
 /**********************/
-/* Spansion S25FL512S */
+/* MX25L6405D		  */
 /**********************/
-int enable_quad_spansion(struct spi_flash *sf, u8 quad_addr, u8 quad_data )
+int enable_quad_macronix(struct spi_flash *sf, u8 quad_addr, u8 quad_data )
 {
 	/* NOTE: Macronix and Windbond are similar to Spansion */
 	/* NOTE: Once quad comamnds are enabled, you don't need to disable
@@ -621,162 +623,7 @@ int enable_quad_spansion(struct spi_flash *sf, u8 quad_addr, u8 quad_data )
 	return ret;
 }
 
-/*******************/
-/* Micron N25Q512A */
-/*******************/
-int enable_quad_micron(struct spi_flash *sf, u8 quad_addr, u8 quad_data )
-{
-/* NOTES:
-	To use the QUAD commands, you need to enable dummy cycles for
-	every type of FAST_READ command. While this is fine when the RZ-QSPI
-	is running in XIP mode, but when you switch back to SPI mode to use
-	something like "sf probe", it can't deal with those dummy cycles,
-	therefore, we need to remove the dummy cycles during each
-	"sf probe". See function qspi_reset_device().
-	It should be noted that if the RZ/A1 is rebooted in XIP mode
-	with those dummy cycles still enabled in the SPI flash, the reboot
-	will still work because the RZ/A1 uses the legacy READ (0x03) command
-	on reset, not FAST_READ */
 
-	int ret = 0;
-	u8 cmd;
-	u8 vcfg_reg[2];
-
-#ifdef DEBUG
-	u8 st_reg[2];
-	u16 nvcfg_reg[2];
-	u8 tmp;
-
-	/* Dual SPI Flash */
-	if (sf->spi->cs) {
-		/* Read Flag Status register (70h) */
-		qspi_disable_auto_combine();	/* only lasts 1 call */
-		ret |= spi_flash_cmd(sf->spi, 0x70, st_reg, 1*2);
-
-		/* Read NONVOLATILE Configuration register (B5h) */
-		qspi_disable_auto_combine();	/* only lasts 1 call */
-		ret |= spi_flash_cmd(sf->spi, 0xB5, nvcfg_reg, 2*2);
-
-		/* swap 2nd and 3rd bytes...becase data for each
-		   SPI flash comes in interleaved */
-		tmp = ((u8 *)nvcfg_reg)[1];
-		((u8 *)nvcfg_reg)[1] = ((u8 *)nvcfg_reg)[2];
-		((u8 *)nvcfg_reg)[2] = tmp;
-
-		/* Read VOLATILE Configuration register (85h) */
-		qspi_disable_auto_combine();	/* only lasts 1 call */
-		ret |= spi_flash_cmd(sf->spi, 0x85, vcfg_reg, 1*2);
-
-	}
-	else {
-		/* Read Flag Status register (70h) */
-		ret |= spi_flash_cmd(sf->spi, 0x70, st_reg, 1);
-
-		/* Read NONVOLATILE Configuration register (B5h) */
-		ret |= spi_flash_cmd(sf->spi, 0xB5, nvcfg_reg, 2);
-
-		/* Read VOLATILE Configuration register (85h) */
-		ret |= spi_flash_cmd(sf->spi, 0x85, vcfg_reg, 1);
-	}
-
-	printf("Initial Values:\n");
-	for(tmp = 0; tmp <= sf->spi->cs ;tmp++) {
-		printf("   SPI Flash %d:\n", tmp+1);
-		printf("\tStatus register = %02X\n", st_reg[tmp]);
-		printf("\tNonVolatile Configuration register = %04X\n", nvcfg_reg[tmp]);
-		printf("\tVolatile Configuration register = %02X\n", vcfg_reg[tmp]);
-	}
-#endif
-
-	/* To use the QUAD commands, we need dummy cycles after every
-	   FAST_READ and FAST_READ_xxx commands */
-	/* Send WRITE VOLATILE CONFIGURATION REGISTER (81h) */
-	cmd = 0x81;
-	if( quad_addr )
-		vcfg_reg[0] = 0x5B;	/* Quad IO: 5 dummy cycles */
-	else if( quad_data )
-		vcfg_reg[0] = 0x3B;	/* Quad Read: 3 dummy cycles */
-	else
-		vcfg_reg[0] = 0x0B;	/* FAST_READ: 0 dummy cycles */
-
-	ret |= spi_flash_cmd(sf->spi, 0x06, NULL, 0);	/* Send Write Enable (06h) */
-	ret |= spi_flash_cmd_write(sf->spi, &cmd, 1, vcfg_reg, 1); /* send same to both flash */
-
-#ifdef DEBUG
-	ret |= spi_flash_cmd(sf->spi, 0x70, st_reg, 1);
-	ret |= spi_flash_cmd(sf->spi, 0xB5, nvcfg_reg, 2);
-	ret |= spi_flash_cmd(sf->spi, 0x85, vcfg_reg, 1);
-	printf("New Values:\n");
-	for(tmp = 0; tmp<1;tmp++) {
-		printf("   SPI Flash %d:\n", tmp+1);
-		printf("\tStatus register = %02X\n", st_reg[tmp]);
-		printf("\tNonVolatile Configuration register = %04X\n", nvcfg_reg[tmp]);
-		printf("\tVolatile Configuration register = %02X\n", vcfg_reg[tmp]);
-	}
-#endif
-
-	/* Finally, fill out the global settings for
-	   Number of Dummy cycles between Address and data */
-
-	/* Assuming a 66MHz clock. Table 13 of n25q_512mb spec */
-	g_FAST_RD_DMY = 0;		/* Fast Read Mode: 0 cycles */
-	g_QUAD_RD_DMY = 3;		/* Quad Read Mode: 3 cycles  */
-	g_QUAD_IO_RD_DMY = 5;		/* Quad I/O Read Mode: 5 cycles  */
-
-	g_QUAD_IO_RD_OPT = 0;		/* Quad I/O Read Mode: no additonal cycles */
-
-	/* NOTE: This part can not run DDR at 66MHz */
-	g_QUAD_IO_DDR_RD_DMY = 0;	/* Quad I/O DDR Read Mode  */
-
-	/* HACK! */
-	if( quad_addr )
-	{
-		/* When in QUAD I/O mode, sometimes the data is not correct.
-		   It appears like the address gets corrupted. Therefore
-		   we need to slow down the SPI clock in this mode. */
-		/* This might be becase the board this code was devleopted on
-		   had lots of wire leads attached to the SPI flash pins */
-		#define	QSPI_SPBCR (0x0008)
-		*(u32 *)(CONFIG_RZA1_BASE_QSPI0 + QSPI_SPBCR) = 0x0300; /* 22.22 Mbps */
-		printf("\nINFO: clock is now 22.22Mbps (see function %s)\n\n",__func__);
-	}
-
-	return ret;
-}
-
-/* Dummy cycles are need for the quad mode FAST_READ commands,
-   but they get applied to ever type of FAST_READ command.
-   Since the "sf" commands in u-boot know nothing about dummy
-   cycles, we need to shut them off if we see a "sf probe" */
-int remove_dummy_micron(struct spi_flash *sf)
-{
-	int ret;
-	u8 cmd;
-	u8 cfg_reg;
-
-#ifdef DEBUG
-	/* Read VOLATILE Configuration register (85h) */
-	ret = spi_flash_cmd(sf->spi, 0x85, &cfg_reg, 1);
-	printf("%s: Initial Volatile Configuration register = %02X\n", __func__, cfg_reg);
-#endif
-
-	/* Send Write Enable (06h) */
-	ret = spi_flash_cmd(sf->spi, 0x06, NULL, 0);
-
-	/* Set Volatile Configuration Register to default value */
-	/* Send WRITE VOLATILE CONFIGURATION REGISTER (81h) */
-	cmd = 0x81;
-	cfg_reg = 0xFB;
-	ret |= spi_flash_cmd_write(sf->spi, &cmd, 1, &cfg_reg, 1);
-
-#ifdef DEBUG
-	/* Read Volatile Configuration register (85h) */
-	ret = spi_flash_cmd(sf->spi, 0x85, &cfg_reg, 1);
-	printf("%s: New Volatile Configuration register = %02X\n", __func__, cfg_reg);
-#endif
-
-	return ret;
-}
 
 /* This function is called when "sf probe" is issued, meaning that
    the user wants to access the deivce in normal single wire SPI mode.
@@ -787,16 +634,14 @@ int qspi_reset_device(struct spi_flash *sf)
 {
 	int ret = 0;
 
-	if( !strcmp(sf->name, "S25FL512S_256K") ) {
+	if( !strcmp(sf->name, "MX25L6405D") ) {
 		/* Don't really need to do anything */
-	}
-	else if( !strcmp(sf->name, "N25Q512") ) {
-		ret = remove_dummy_micron(sf);
 	}
 	else {
 		printf("\tWARNING: SPI Flash needs to be added to function %s()\n",__func__);
 		return 1;
 	}
+
 	return ret;
 }
 
@@ -885,10 +730,8 @@ int do_qspi(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 
 	/* For Quad Mode operation, extra setup is needed in the SPI
 	   Flash devices */
-	if( !strcmp(my_spi_flash->name, "S25FL512S_256K") )
-		ret = enable_quad_spansion(my_spi_flash, quad_addr, quad_data);
-	else if( !strcmp(my_spi_flash->name, "N25Q512") )
-		ret = enable_quad_micron(my_spi_flash, quad_addr, quad_data);
+	if( !strcmp(my_spi_flash->name, "MX25L6405D") )
+		ret = enable_quad_macronix(my_spi_flash, quad_addr, quad_data);
 	else
 	{
 		printf("ERROR: SPI Flash support needs to be added to function %s()\n",__func__);
